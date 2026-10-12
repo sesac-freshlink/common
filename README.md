@@ -93,6 +93,6 @@ dependencies {
 ## 7. 브랜치와 기여
 
 - `main`(배포) ← `dev`(통합, 기본 브랜치) ← `feat/<기능ID>-<설명>` (예: `feat/E-03-outbox-publisher`)
-- 쪽지 형식을 바꾸는 PR은 `message-spec` 라벨을 달고 이태우·김경우 둘 다 리뷰한다.
+- 쪽지 형식을 바꾸는 PR은 `message-spec` 라벨을 달고 합치기 전에 이태우·김경우에게 꼭 알린다.
 
 자세한 규칙은 [.github 레포](https://github.com/sesac-freshlink/.github)를 참고한다.
