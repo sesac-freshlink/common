@@ -81,14 +81,15 @@ dependencies {
 - SemVer 태그 `vMAJOR.MINOR.PATCH` (예: `v0.1.0` → `v0.2.0`). 태그를 달면 GitHub Packages에 배포한다.
 - 0.x 동안은 쪽지 형식이 바뀔 수 있다. **버전을 올릴 때 이태우·김경우에게 알린다.**
 
-## 6. 로컬에서 빌드하기
+## 6. 빌드하기
 
 > 아직 뼈대만 있는 상태다. 첫 작업으로 Gradle `java-library` 프로젝트를 만들고 `maven-publish` 플러그인을 설정한다.
 
 ```bash
 ./gradlew build
-./gradlew publishToMavenLocal   # 서비스에서 mavenLocal()로 바로 테스트
 ```
+
+서비스에서 배포 전 버전을 시험할 때는 `-SNAPSHOT` 버전으로 GitHub Packages에 올리고 서비스가 그 버전을 쓴다.
 
 ## 7. 브랜치와 기여
 
