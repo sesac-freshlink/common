@@ -6,7 +6,7 @@
 | --- | --- |
 | 담당 | 김진아 |
 | 관련 기능 ID | E-03 Outbox 발행기, E-04 멱등 처리 |
-| 기술 | Java 21, Spring Boot 3 (라이브러리), Spring Data JPA, Spring Cloud AWS (SQS) |
+| 기술 | Java 21, Jackson 3, 버전은 Spring Boot 4.0 BOM으로 맞춤(라이브러리, 실행 jar 없음). v0.2.0(Outbox·멱등)부터 Spring Data JPA, Spring Cloud AWS 4.x (SQS) |
 | 배포 | `v*` 태그 → GitHub Packages (Maven) `com.freshlink:common:<버전>` |
 | 사용처 | inventory-service, order-service, logistics-simulator(DTO) |
 
