@@ -1,0 +1,75 @@
+// common 빌드 설정. 여러 서비스가 가져다 쓰는 라이브러리라 실행 jar(bootJar)를 만들지 않는다.
+// 팀 공통 기준: Java 21, Spring Boot 4.0.8 BOM으로 버전 맞춤, Jackson 3, Gradle Wrapper 9.x.
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+group = 'com.freshlink'
+
+// 버전은 태그에서 받는다. GitHub Actions에서 v0.1.0 태그로 빌드하면 0.1.0, 그 밖에는 0.1.0-SNAPSHOT.
+// SNAPSHOT은 ./gradlew publishToMavenLocal 로 내 PC에서만 시험한다 (README 6장).
+def resolveVersion() {
+    def refType = System.getenv('GITHUB_REF_TYPE')
+    def refName = System.getenv('GITHUB_REF_NAME')
+    if (refType == 'tag' && refName != null && refName.startsWith('v')) {
+        return refName.substring(1)
+    }
+    return '0.1.0-SNAPSHOT'
+}
+version = resolveVersion()
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+    withSourcesJar()
+}
+
+repositories {
+    mavenCentral()
+}
+
+ext {
+    set('springBootVersion', '4.0.8')   // 네 서비스 레포와 같은 Boot 버전
+}
+
+dependencies {
+    // 버전은 Boot 4.0 BOM으로 맞춘다. Spring 자체 의존성은 넣지 않는다 (서비스가 Spring 버전에 묶이지 않게).
+    api platform("org.springframework.boot:spring-boot-dependencies:${springBootVersion}")
+    api 'tools.jackson.core:jackson-databind'        // Jackson 3. 쪽지 DTO 애너테이션과 JSON 변환기
+
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation 'org.assertj:assertj-core'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            pom {
+                name = 'freshlink-common'
+                description = 'FreshLink 공통 라이브러리: 쪽지 DTO 7종, 공통 오류 응답'
+            }
+        }
+    }
+    repositories {
+        maven {
+            name = 'GitHubPackages'
+            url = uri('https://maven.pkg.github.com/sesac-freshlink/common')
+            credentials {
+                username = System.getenv('GITHUB_ACTOR')
+                password = System.getenv('GITHUB_TOKEN')
+            }
+        }
+    }
+}
