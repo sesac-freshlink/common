@@ -1,4 +1,4 @@
-package com.freshlink.common.message;
+package com.freshlink.common.message.command;
 
 /** RELEASE 쪽지의 해제 사유 */
 public enum ReleaseReason {

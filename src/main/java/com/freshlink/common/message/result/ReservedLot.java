@@ -1,4 +1,6 @@
-package com.freshlink.common.message;
+package com.freshlink.common.message.result;
+
+import com.freshlink.common.message.json.ExpiryDateDeserializer;
 
 import tools.jackson.databind.annotation.JsonDeserialize;
 
