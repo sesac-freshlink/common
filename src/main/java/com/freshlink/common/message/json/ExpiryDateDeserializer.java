@@ -1,4 +1,6 @@
-package com.freshlink.common.message;
+package com.freshlink.common.message.json;
+
+import com.freshlink.common.message.MessageJson;
 
 import tools.jackson.core.JsonParser;
 import tools.jackson.databind.DeserializationContext;

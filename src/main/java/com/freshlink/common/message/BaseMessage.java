@@ -4,6 +4,13 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.freshlink.common.message.command.ConfirmMessage;
+import com.freshlink.common.message.command.DisposeMessage;
+import com.freshlink.common.message.command.InboundMessage;
+import com.freshlink.common.message.command.ReleaseMessage;
+import com.freshlink.common.message.command.ReserveMessage;
+import com.freshlink.common.message.result.ReserveFailedMessage;
+import com.freshlink.common.message.result.ReservedMessage;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -30,9 +37,7 @@ import java.util.UUID;
         @JsonSubTypes.Type(value = ReserveFailedMessage.class, name = "RESERVE_FAILED")
 })
 @JsonIgnoreProperties(ignoreUnknown = true)
-public sealed interface BaseMessage extends StoreScoped
-        permits InboundMessage, ReserveMessage, ConfirmMessage, ReleaseMessage,
-                DisposeMessage, ReservedMessage, ReserveFailedMessage {
+public interface BaseMessage extends StoreScoped {
 
     /** 쪽지마다 새로 만드는 UUID. 받는 쪽은 이 값으로 중복을 거른다 */
     String messageId();

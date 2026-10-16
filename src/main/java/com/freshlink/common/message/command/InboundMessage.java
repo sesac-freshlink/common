@@ -1,4 +1,7 @@
-package com.freshlink.common.message;
+package com.freshlink.common.message.command;
+
+import com.freshlink.common.message.BaseMessage;
+import com.freshlink.common.message.MessageType;
 
 import java.time.OffsetDateTime;
 import java.util.List;
