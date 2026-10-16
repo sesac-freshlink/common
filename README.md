@@ -69,7 +69,10 @@ common/
 ├── build.gradle                       # java-library + maven-publish. 버전은 태그에서
 ├── .github/workflows/publish.yml      # v* 태그 → 테스트 → GitHub Packages 배포
 ├── src/main/java/com/freshlink/common/
-│   ├── message/       # BaseMessage, 쪽지 7종, InboundItem·ReservedLot, enum, MessageJson, ExpiryDateDeserializer
+│   ├── message/       # BaseMessage, StoreScoped, MessageType, MessageJson (공통 뼈대와 변환기)
+│   │   ├── command/   # inventory-commands.fifo로 가는 것: Inbound(+InboundItem)·Reserve·Confirm·Release(+ReleaseReason)·Dispose
+│   │   ├── result/    # inventory-results로 가는 것: Reserved(+ReservedLot)·ReserveFailed(+ReserveFailReason)
+│   │   └── json/      # ExpiryDateDeserializer
 │   ├── error/         # ErrorCode, BusinessException, ErrorResponse
 │   ├── outbox/        # (v0.2.0) Outbox 엔티티, 저장 헬퍼, 발행기
 │   └── idempotency/   # (v0.2.0) processed_message 기록·확인
