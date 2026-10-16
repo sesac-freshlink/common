@@ -24,7 +24,7 @@ class MessageJsonTest {
                 ConfirmMessage.of(1024L, 1L),
                 ReleaseMessage.of(1024L, 1L, ReleaseReason.PAYMENT_FAILED),
                 DisposeMessage.of(7L, 1L, 300L, 5, "c1a2b3c4-0000-4000-8000-000000000001"),
-                ReservedMessage.of(1024L, 1L, 15L, 2, 3500L, List.of(
+                ReservedMessage.of(1024L, 1L, 15L, "매운 컵라면 115g", 2, 3500L, List.of(
                         new ReservedLot(300L, 2, OffsetDateTime.parse("2026-10-20T23:59:59+09:00")))),
                 ReserveFailedMessage.of(1024L, 1L, 15L, ReserveFailReason.OUT_OF_STOCK, 0)
         );
@@ -95,13 +95,14 @@ class MessageJsonTest {
     void 유통기한에_일시가_오면_그대로() {
         String json = """
                 {"messageId":"m1","type":"RESERVED","createdAt":"2026-10-15T09:00:00+09:00",
-                 "orderId":1024,"storeId":1,"productId":15,"quantity":1,"unitPrice":3500,
+                 "orderId":1024,"storeId":1,"productId":15,"productName":"매운 컵라면 115g","quantity":1,"unitPrice":3500,
                  "lots":[{"lotId":300,"quantity":1,"expiryDate":"2026-10-20T10:00:00+09:00"}]}
                 """;
 
         ReservedMessage m = (ReservedMessage) MessageJson.fromJson(json);
 
         assertThat(m.lots().get(0).expiryDate()).isEqualTo(OffsetDateTime.parse("2026-10-20T10:00:00+09:00"));
+        assertThat(m.productName()).isEqualTo("매운 컵라면 115g");
     }
 
     @Test
