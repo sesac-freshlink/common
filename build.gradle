@@ -1,5 +1,7 @@
 // common 빌드 설정. 여러 서비스가 가져다 쓰는 라이브러리라 실행 jar(bootJar)를 만들지 않는다.
 // 팀 공통 기준: Java 21, Spring Boot 4.0.8 BOM으로 버전 맞춤, Jackson 3, Gradle Wrapper 9.x.
+// v0.2.0부터 Outbox·멱등 처리에 Spring·SQS·ShedLock을 쓰지만 전부 compileOnly다. 쓰는 서비스(inventory, order)가 이미 갖고 있고,
+// member-service·logistics-simulator에는 끌려 들어가지 않는다.
 plugins {
     id 'java-library'
     id 'maven-publish'
@@ -7,7 +9,7 @@ plugins {
 
 group = 'com.freshlink'
 
-// 버전은 태그에서 받는다. GitHub Actions에서 v0.1.0 태그로 빌드하면 0.1.0, 그 밖에는 0.1.0-SNAPSHOT.
+// 버전은 태그에서 받는다. GitHub Actions에서 v0.2.0 태그로 빌드하면 0.2.0, 그 밖에는 0.2.0-SNAPSHOT.
 // SNAPSHOT은 ./gradlew publishToMavenLocal 로 내 PC에서만 시험한다 (README 6장).
 def resolveVersion() {
     def refType = System.getenv('GITHUB_REF_TYPE')
@@ -15,7 +17,7 @@ def resolveVersion() {
     if (refType == 'tag' && refName != null && refName.startsWith('v')) {
         return refName.substring(1)
     }
-    return '0.1.0-SNAPSHOT'
+    return '0.2.0-SNAPSHOT'
 }
 version = resolveVersion()
 
@@ -31,7 +33,9 @@ repositories {
 }
 
 ext {
-    set('springBootVersion', '4.0.8')   // 네 서비스 레포와 같은 Boot 버전
+    set('springBootVersion', '4.0.8')       // 네 서비스 레포와 같은 Boot 버전
+    set('springCloudAwsVersion', '4.2.0')   // Spring Cloud 2025.1(Boot 4.0) 기준 4.x 최신
+    set('shedlockVersion', '7.10.1')        // Spring 7·Boot 4용 7.x 최신. 서비스도 이 버전을 쓴다 (README 4장)
 }
 
 dependencies {
@@ -39,8 +43,24 @@ dependencies {
     api platform("org.springframework.boot:spring-boot-dependencies:${springBootVersion}")
     api 'tools.jackson.core:jackson-databind'        // Jackson 3. 쪽지 DTO 애너테이션과 JSON 변환기
 
+    // Outbox·멱등 처리 (v0.2.0). 서비스가 런타임에 갖고 있어야 한다 (README 4장)
+    compileOnly 'org.springframework.boot:spring-boot-autoconfigure'
+    compileOnly 'org.springframework:spring-jdbc'
+    compileOnly 'org.springframework:spring-tx'
+    compileOnly "io.awspring.cloud:spring-cloud-aws-sqs:${springCloudAwsVersion}"
+    compileOnly "net.javacrumbs.shedlock:shedlock-spring:${shedlockVersion}"
+    compileOnly 'org.slf4j:slf4j-api'
+
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testImplementation 'org.assertj:assertj-core'
+    testImplementation 'org.mockito:mockito-core'
+    testImplementation 'org.springframework.boot:spring-boot-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    testImplementation "io.awspring.cloud:spring-cloud-aws-starter-sqs:${springCloudAwsVersion}"
+    testImplementation "net.javacrumbs.shedlock:shedlock-spring:${shedlockVersion}"
+    testImplementation "net.javacrumbs.shedlock:shedlock-provider-jdbc-template:${shedlockVersion}"
+    testImplementation 'org.testcontainers:testcontainers-mysql'               // MySQL 8.4 컨테이너 (CI에는 Docker가 있다)
+    testRuntimeOnly 'com.mysql:mysql-connector-j'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
@@ -50,6 +70,7 @@ tasks.withType(JavaCompile).configureEach {
 
 tasks.named('test') {
     useJUnitPlatform()
+    // Docker 없이 이미 떠 있는 MySQL로 돌리고 싶으면 FRESHLINK_TEST_MYSQL_URL·_USERNAME·_PASSWORD를 둔다 (README 6장)
 }
 
 publishing {
@@ -58,7 +79,7 @@ publishing {
             from components.java
             pom {
                 name = 'freshlink-common'
-                description = 'FreshLink 공통 라이브러리: 쪽지 DTO 7종, 공통 오류 응답'
+                description = 'FreshLink 공통 라이브러리: 쪽지 DTO 7종, 공통 오류 응답, Outbox 발행기, 멱등 처리'
             }
         }
     }
