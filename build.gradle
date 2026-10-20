@@ -9,7 +9,7 @@ plugins {
 
 group = 'com.freshlink'
 
-// 버전은 태그에서 받는다. GitHub Actions에서 v0.2.0 태그로 빌드하면 0.2.0, 그 밖에는 0.2.0-SNAPSHOT.
+// 버전은 태그에서 받는다. GitHub Actions에서 v0.3.0 태그로 빌드하면 0.3.0, 그 밖에는 0.3.0-SNAPSHOT.
 // SNAPSHOT은 ./gradlew publishToMavenLocal 로 내 PC에서만 시험한다 (README 6장).
 def resolveVersion() {
     def refType = System.getenv('GITHUB_REF_TYPE')
@@ -17,7 +17,7 @@ def resolveVersion() {
     if (refType == 'tag' && refName != null && refName.startsWith('v')) {
         return refName.substring(1)
     }
-    return '0.2.0-SNAPSHOT'
+    return '0.3.0-SNAPSHOT'
 }
 version = resolveVersion()
 
@@ -50,6 +50,8 @@ dependencies {
     compileOnly "io.awspring.cloud:spring-cloud-aws-sqs:${springCloudAwsVersion}"
     compileOnly "net.javacrumbs.shedlock:shedlock-spring:${shedlockVersion}"
     compileOnly 'org.slf4j:slf4j-api'
+    // 추적을 SQS 너머까지 잇기 (v0.3.0). 서비스는 spring-boot-starter-zipkin으로 갖고 있다. 없으면 이 기능만 꺼진다
+    compileOnly 'io.micrometer:micrometer-tracing'
 
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testImplementation 'org.assertj:assertj-core'
@@ -59,6 +61,7 @@ dependencies {
     testImplementation "io.awspring.cloud:spring-cloud-aws-starter-sqs:${springCloudAwsVersion}"
     testImplementation "net.javacrumbs.shedlock:shedlock-spring:${shedlockVersion}"
     testImplementation "net.javacrumbs.shedlock:shedlock-provider-jdbc-template:${shedlockVersion}"
+    testImplementation 'io.micrometer:micrometer-tracing-bridge-brave'
     testImplementation 'org.testcontainers:testcontainers-mysql'               // MySQL 8.4 컨테이너 (CI에는 Docker가 있다)
     testRuntimeOnly 'com.mysql:mysql-connector-j'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'

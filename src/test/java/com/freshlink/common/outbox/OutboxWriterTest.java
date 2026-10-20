@@ -85,4 +85,25 @@ class OutboxWriterTest {
     private int count() {
         return jdbc.queryForObject("SELECT COUNT(*) FROM outbox", Integer.class);
     }
+
+    @Test
+    @DisplayName("v0.3.0: 추적 중이면 trace_parent에 지금 요청의 traceparent를 적는다")
+    void saveTraceParent() {
+        String traceParent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+        OutboxWriter traced = new OutboxWriter(jdbc, new com.freshlink.common.tracing.OutboxTracing() {
+            @Override
+            public String currentTraceParent() {
+                return traceParent;
+            }
+
+            @Override
+            public void inSpan(String parent, String name, java.util.function.Consumer<String> action) {
+                action.accept(parent);
+            }
+        });
+
+        tx.executeWithoutResult(status -> traced.save(FIFO, ReserveMessage.of(10L, 1L, 2L, 3)));
+
+        assertThat(jdbc.queryForObject("SELECT trace_parent FROM outbox", String.class)).isEqualTo(traceParent);
+    }
 }

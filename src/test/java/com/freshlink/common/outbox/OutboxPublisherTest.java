@@ -4,6 +4,9 @@ import com.freshlink.common.message.command.ReserveMessage;
 import com.freshlink.common.message.result.ReserveFailReason;
 import com.freshlink.common.message.result.ReserveFailedMessage;
 import com.freshlink.common.support.TestDatabase;
+import com.freshlink.common.tracing.BraveTestTracing;
+import io.micrometer.tracing.Span;
+import io.micrometer.tracing.Tracer;
 import io.awspring.cloud.sqs.operations.SqsTemplate;
 import net.javacrumbs.shedlock.core.DefaultLockingTaskExecutor;
 import net.javacrumbs.shedlock.core.LockProvider;
@@ -20,6 +23,7 @@ import software.amazon.awssdk.services.sqs.model.GetQueueAttributesRequest;
 import software.amazon.awssdk.services.sqs.model.GetQueueAttributesResponse;
 import software.amazon.awssdk.services.sqs.model.GetQueueUrlRequest;
 import software.amazon.awssdk.services.sqs.model.GetQueueUrlResponse;
+import software.amazon.awssdk.services.sqs.model.MessageAttributeValue;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 import software.amazon.awssdk.services.sqs.model.SendMessageResponse;
 
@@ -177,6 +181,33 @@ class OutboxPublisherTest {
 
         assertThat(publisher.publishOnce()).isEqualTo(2);
         assertThat(publisher.publishOnce()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("v0.3.0: 저장 때의 추적을 이어 traceparent 메시지 속성을 붙인다 (traceId 같고 spanId는 새 구간)")
+    void traceParentCrossesSqs() {
+        try (BraveTestTracing brave = new BraveTestTracing()) {
+            OutboxWriter tracedWriter = new OutboxWriter(jdbc, brave.outboxTracing());
+            Span request = brave.tracer.nextSpan().name("POST /orders").start();
+            try (Tracer.SpanInScope ignored = brave.tracer.withSpan(request)) {
+                tx.executeWithoutResult(status -> tracedWriter.save(FIFO, ReserveMessage.of(10L, 1L, 2L, 3)));
+            } finally {
+                request.end();
+            }
+            tx.executeWithoutResult(status -> writer.save(FIFO, ReserveMessage.of(11L, 1L, 2L, 3)));   // v0.2.0 행처럼 추적 없음
+
+            OutboxPublisher publisher = new OutboxPublisher(jdbc, SqsTemplate.newTemplate(sqs),
+                    new DefaultLockingTaskExecutor(jdbcLock()), properties, Clock.systemUTC(), brave.outboxTracing());
+            assertThat(publisher.publishOnce()).isEqualTo(2);
+
+            List<SendMessageRequest> requests = sentRequests(2);
+            MessageAttributeValue traceparent = requests.get(0).messageAttributes().get("traceparent");
+            assertThat(traceparent).isNotNull();
+            assertThat(traceparent.dataType()).isEqualTo("String");
+            assertThat(traceparent.stringValue()).startsWith("00-" + request.context().traceId() + "-");
+            assertThat(traceparent.stringValue().split("-")[2]).isNotEqualTo(request.context().spanId());
+            assertThat(requests.get(1).messageAttributes()).doesNotContainKey("traceparent");
+        }
     }
 
     private OutboxPublisher publisher(LockProvider lockProvider) {
