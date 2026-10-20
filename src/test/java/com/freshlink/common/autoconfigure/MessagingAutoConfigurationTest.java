@@ -4,11 +4,17 @@ import com.freshlink.common.idempotency.ProcessedMessages;
 import com.freshlink.common.outbox.OutboxProperties;
 import com.freshlink.common.outbox.OutboxPublisher;
 import com.freshlink.common.outbox.OutboxWriter;
+import com.freshlink.common.tracing.BraveTestTracing;
+import com.freshlink.common.tracing.MicrometerOutboxTracing;
+import com.freshlink.common.tracing.OutboxTracing;
+import io.micrometer.tracing.Tracer;
+import io.micrometer.tracing.propagation.Propagator;
 import io.awspring.cloud.sqs.operations.SqsTemplate;
 import net.javacrumbs.shedlock.core.LockProvider;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.test.context.FilteredClassLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 import javax.sql.DataSource;
@@ -78,5 +84,30 @@ class MessagingAutoConfigurationTest {
         runner.withPropertyValues("freshlink.messaging.enabled=true")
                 .run(context -> assertThat(context).hasFailed()
                         .getFailure().rootCause().hasMessageContaining("LockProvider"));
+    }
+
+    @Test
+    @DisplayName("v0.3.0: Micrometer Tracing이 있으면 Outbox가 추적을 잇는다")
+    void tracingWhenMicrometerPresent() {
+        try (BraveTestTracing brave = new BraveTestTracing()) {
+            runner.withBean(LockProvider.class, () -> config -> Optional.empty())
+                    .withBean(Tracer.class, () -> brave.tracer)
+                    .withBean(Propagator.class, () -> brave.propagator)
+                    .withPropertyValues("freshlink.messaging.enabled=true")
+                    .run(context -> assertThat(context).hasNotFailed()
+                            .getBean(OutboxTracing.class).isInstanceOf(MicrometerOutboxTracing.class));
+        }
+    }
+
+    @Test
+    @DisplayName("v0.3.0: Micrometer Tracing이 클래스 경로에 없어도 뜨고, 추적만 꺼진다")
+    void noTracingWithoutMicrometer() {
+        runner.withClassLoader(new FilteredClassLoader("io.micrometer.tracing"))
+                .withBean(LockProvider.class, () -> config -> Optional.empty())
+                .withPropertyValues("freshlink.messaging.enabled=true")
+                .run(context -> assertThat(context).hasNotFailed()
+                        .hasSingleBean(OutboxWriter.class)
+                        .hasSingleBean(OutboxPublisher.class)
+                        .doesNotHaveBean(OutboxTracing.class));
     }
 }

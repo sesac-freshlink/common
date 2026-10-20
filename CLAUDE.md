@@ -59,5 +59,5 @@
 
 ```bash
 ./gradlew build                 # 컴파일 + 테스트 (Windows: gradlew.bat build)
-GITHUB_REF_TYPE=tag GITHUB_REF_NAME=v0.2.0 ./gradlew publishToMavenLocal   # 태그 전 서비스에서 시험: ~/.m2에 0.2.0
+GITHUB_REF_TYPE=tag GITHUB_REF_NAME=v0.3.0 ./gradlew publishToMavenLocal   # 태그 전 서비스에서 시험: ~/.m2에 0.3.0
 ```

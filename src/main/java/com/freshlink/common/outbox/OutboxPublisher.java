@@ -1,5 +1,6 @@
 package com.freshlink.common.outbox;
 
+import com.freshlink.common.tracing.OutboxTracing;
 import io.awspring.cloud.sqs.operations.SqsTemplate;
 import net.javacrumbs.shedlock.core.LockConfiguration;
 import net.javacrumbs.shedlock.core.LockingTaskExecutor;
@@ -23,6 +24,7 @@ import java.util.concurrent.TimeUnit;
  *   <li>매 회차를 ShedLock {@code freshlink-outbox-publisher} 잠금으로 감싼다. 파드가 여러 개여도 한 번에 한 파드만 보내서 순서가 지켜진다.</li>
  *   <li>보내다 실패하면 그 회차를 거기서 멈춘다. 다음 행을 먼저 보내면 같은 점포 안에서 순서가 바뀐다. 실패한 행은 다음 회차에 다시 보낸다.</li>
  *   <li>보낸 뒤 {@code published = true}로 바꾸기 전에 파드가 죽으면 같은 쪽지가 한 번 더 나간다. 받는 쪽은 {@code ProcessedMessages}로 거른다.</li>
+ *   <li>v0.3.0: 행의 {@code trace_parent}를 부모로 구간을 열고 SQS 메시지 속성 {@code traceparent}를 붙인다({@link OutboxTracing}).</li>
  * </ul>
  */
 public class OutboxPublisher implements SmartLifecycle {
@@ -33,7 +35,7 @@ public class OutboxPublisher implements SmartLifecycle {
     private static final Logger log = LoggerFactory.getLogger(OutboxPublisher.class);
 
     private static final String SELECT_SQL = """
-            SELECT id, message_id, queue_name, group_id, payload
+            SELECT id, message_id, queue_name, group_id, payload, trace_parent
             FROM outbox
             WHERE published = FALSE
             ORDER BY id
@@ -47,16 +49,24 @@ public class OutboxPublisher implements SmartLifecycle {
     private final LockingTaskExecutor lockingTaskExecutor;
     private final OutboxProperties properties;
     private final Clock clock;
+    private final OutboxTracing tracing;
 
     private ScheduledExecutorService scheduler;
 
     public OutboxPublisher(JdbcTemplate jdbcTemplate, SqsTemplate sqsTemplate,
                            LockingTaskExecutor lockingTaskExecutor, OutboxProperties properties, Clock clock) {
+        this(jdbcTemplate, sqsTemplate, lockingTaskExecutor, properties, clock, OutboxTracing.NOOP);
+    }
+
+    public OutboxPublisher(JdbcTemplate jdbcTemplate, SqsTemplate sqsTemplate,
+                           LockingTaskExecutor lockingTaskExecutor, OutboxProperties properties, Clock clock,
+                           OutboxTracing tracing) {
         this.jdbcTemplate = jdbcTemplate;
         this.sqsTemplate = sqsTemplate;
         this.lockingTaskExecutor = lockingTaskExecutor;
         this.properties = properties;
         this.clock = clock;
+        this.tracing = tracing;
     }
 
     /**
@@ -76,7 +86,7 @@ public class OutboxPublisher implements SmartLifecycle {
     private int publishBatch() {
         List<OutboxRow> rows = jdbcTemplate.query(SELECT_SQL, (rs, i) -> new OutboxRow(
                 rs.getLong("id"), rs.getString("message_id"), rs.getString("queue_name"),
-                rs.getString("group_id"), rs.getString("payload")), properties.batchSize());
+                rs.getString("group_id"), rs.getString("payload"), rs.getString("trace_parent")), properties.batchSize());
         int sent = 0;
         for (OutboxRow row : rows) {
             try {
@@ -93,12 +103,15 @@ public class OutboxPublisher implements SmartLifecycle {
     }
 
     private void send(OutboxRow row) {
-        sqsTemplate.send(to -> {
+        tracing.inSpan(row.traceParent(), "outbox publish", traceParent -> sqsTemplate.send(to -> {
             to.queue(row.queueName()).payload(row.payload());
             if (OutboxWriter.isFifo(row.queueName())) {
                 to.messageGroupId(row.groupId()).messageDeduplicationId(row.messageId());
             }
-        });
+            if (traceParent != null) {
+                to.header(OutboxTracing.TRACEPARENT, traceParent);
+            }
+        }));
     }
 
     @Override
@@ -137,6 +150,7 @@ public class OutboxPublisher implements SmartLifecycle {
         return scheduler != null;
     }
 
-    private record OutboxRow(long id, String messageId, String queueName, String groupId, String payload) {
+    private record OutboxRow(long id, String messageId, String queueName, String groupId, String payload,
+                             String traceParent) {
     }
 }
