@@ -5,8 +5,8 @@
 | 항목 | 내용 |
 | --- | --- |
 | 담당 | 김진아 |
-| 관련 기능 ID | E-03 Outbox 발행기, E-04 멱등 처리 |
-| 기술 | Java 21, Jackson 3, 버전은 Spring Boot 4.0.8 BOM으로 맞춤(라이브러리, 실행 jar 없음). Outbox·멱등(v0.2.0)은 Spring JDBC, Spring Cloud AWS 4.2.0 (SQS), ShedLock 7.10.1을 쓰지만 전부 `compileOnly`라 쓰지 않는 서비스에는 끌려가지 않는다 |
+| 관련 기능 ID | E-03 Outbox 발행기, E-04 멱등 처리, I-03 관측성(Outbox 추적 잇기, v0.3.0) |
+| 기술 | Java 21, Jackson 3, 버전은 Spring Boot 4.0.8 BOM으로 맞춤(라이브러리, 실행 jar 없음). Outbox·멱등(v0.2.0)은 Spring JDBC, Spring Cloud AWS 4.2.0 (SQS), ShedLock 7.10.1을, 추적 잇기(v0.3.0)는 Micrometer Tracing을 쓰지만 전부 `compileOnly`라 쓰지 않는 서비스에는 끌려가지 않는다 |
 | 배포 | `v*` 태그 → GitHub Packages (Maven) `com.freshlink:common:<버전>` |
 | 사용처 | inventory-service, order-service, member-service(오류 응답), logistics-simulator(DTO) |
 
@@ -16,7 +16,7 @@
 
 inventory-service, order-service, logistics-simulator가 SQS로 쪽지를 주고받는다. 쪽지 클래스를 각자 만들면 필드가 어긋나서 서로 못 읽는다. 그래서 여기 한 번만 만들고 세 서비스가 같은 버전을 가져다 쓴다. Outbox·멱등 코드도 같은 이유로 여기 둔다.
 
-## 2. 들어 있는 것 (v0.2.0)
+## 2. 들어 있는 것 (v0.3.0)
 
 ### 쪽지 DTO 7종 (`com.freshlink.common.message`)
 
@@ -65,6 +65,18 @@ DB를 바꾸고 쪽지를 보내는 서비스(inventory, order)가 쓴다. 설�
 | `OutboxPublisher` | `publish-interval`(기본 1초)마다 안 보낸 행을 `id` 순으로 최대 `batch-size`(기본 100)개 꺼내 `SqsTemplate`으로 보낸다. FIFO면 그룹 ID = storeId, 중복 제거 ID = messageId. ShedLock 잠금 `freshlink-outbox-publisher`로 한 번에 한 파드만 보낸다. 보내다 실패하면 그 회차를 멈추고 다음 회차에 그 행부터 다시 보낸다(점포 안 순서 유지) |
 | `ProcessedMessages.markIfNew(messageId)` | 처음 보는 messageId면 `processed_message`에 적고 `true`, 이미 있으면 `false`. 쪽지 처리와 **같은 트랜잭션**이어야 한다(밖에서 부르면 예외). `INSERT IGNORE`의 행 수로 판단해서 중복이어도 트랜잭션이 롤백 전용으로 바뀌지 않는다 |
 
+### Outbox 추적 잇기 (v0.3.0, I-03, `com.freshlink.common.tracing`)
+
+Outbox 발행기는 요청과 다른 스레드에서 보내서, 그냥 두면 SQS 너머 처리(inventory의 예약 등)가 새 traceId로 시작한다. v0.3.0은 Zipkin·Grafana에서 주문 요청 → RESERVE 쪽지 → inventory 처리가 **traceId 하나**로 보이게 잇는다.
+
+| 언제 | 하는 일 |
+| --- | --- |
+| `OutboxWriter.save` | 지금 요청의 추적을 W3C `traceparent`(`00-<traceId>-<spanId>-01`)로 `outbox.trace_parent`에 적는다. 추적 중이 아니면 NULL |
+| `OutboxPublisher` 전송 | 행의 `trace_parent`를 부모로 `outbox publish` 구간을 열고, SQS 메시지 속성 `traceparent`를 붙여 보낸다. NULL인 행(v0.2.0으로 적은 행)은 예전처럼 그냥 보낸다 |
+| 받는 쪽 `@SqsListener` | `spring.cloud.aws.sqs.observation-enabled: true`면 Spring Cloud AWS가 `traceparent` 속성을 읽어 같은 추적을 잇는다(4-3) |
+
+Micrometer Tracing(서비스의 `spring-boot-starter-zipkin`)이 클래스 경로에 있을 때만 켜진다. 없으면 `trace_parent`는 NULL이고 나머지는 v0.2.0과 같다. `trace_parent` 칸은 v0.2.0 표에 이미 있어서 **Flyway 파일을 새로 만들 필요가 없다**.
+
 Outbox는 "적어도 한 번" 보낸다. 보낸 뒤 `published = true`로 바꾸기 전에 파드가 죽으면 같은 쪽지가 한 번 더 나간다. 그래서 받는 쪽은 꼭 `markIfNew`로 거른다. 둘이 짝을 이뤄 "정확히 한 번 반영"이 된다.
 
 `freshlink.messaging.enabled=true`일 때만 빈이 생긴다(4-3). member-service, logistics-simulator는 켜지 않는다.
@@ -83,12 +95,14 @@ common/
 │   ├── error/         # ErrorCode, BusinessException, ErrorResponse
 │   ├── outbox/        # OutboxWriter(저장), OutboxPublisher(발행기), OutboxProperties
 │   ├── idempotency/   # ProcessedMessages (processed_message 기록·확인)
+│   ├── tracing/       # OutboxTracing, MicrometerOutboxTracing (v0.3.0, Outbox 추적 잇기)
 │   └── autoconfigure/ # MessagingAutoConfiguration (freshlink.messaging.enabled=true일 때만)
 ├── src/main/resources/META-INF/spring/…AutoConfiguration.imports
 └── src/test/java/com/freshlink/common/
     ├── message/MessageJsonTest.java   # 7종 왕복, 예시 JSON, 유통기한, 모르는 필드, 그룹 ID
     ├── error/ErrorResponseTest.java   # 세 키, enum 이름 = code
-    ├── outbox/                        # 저장·롤백·트랜잭션 밖 예외·그룹 ID, 발행 순서·실패 시 멈춤·잠금
+    ├── outbox/                        # 저장·롤백·트랜잭션 밖 예외·그룹 ID, 발행 순서·실패 시 멈춤·잠금, traceparent 속성
+    ├── tracing/                       # traceparent 만들기·잇기 (Brave, 서비스와 같은 W3C 형식)
     ├── idempotency/                   # 두 번째는 false, 롤백 뒤 다시 true, 중복이어도 커밋
     └── autoconfigure/                 # 꺼져 있으면 빈 없음, LockProvider 없으면 기동 실패
 ```
@@ -110,14 +124,14 @@ repositories {
     }
 }
 dependencies {
-    implementation "com.freshlink:common:0.2.0"
+    implementation "com.freshlink:common:0.3.0"
 }
 ```
 
-**태그를 달기 전에 시험하기:** 이 레포에서 아래를 실행하면 `~/.m2`에 `0.2.0`이 올라간다. 서비스 쪽 `build.gradle`에는 `mavenLocal()`을 커밋하지 말고, 검증할 때만 init 스크립트나 로컬 수정으로 넣는다.
+**태그를 달기 전에 시험하기:** 이 레포에서 아래를 실행하면 `~/.m2`에 `0.3.0`이 올라간다. 서비스 쪽 `build.gradle`에는 `mavenLocal()`을 커밋하지 말고, 검증할 때만 init 스크립트나 로컬 수정으로 넣는다.
 
 ```bash
-GITHUB_REF_TYPE=tag GITHUB_REF_NAME=v0.2.0 ./gradlew publishToMavenLocal
+GITHUB_REF_TYPE=tag GITHUB_REF_NAME=v0.3.0 ./gradlew publishToMavenLocal
 ```
 
 ### 4-1. Outbox·멱등을 쓰는 서비스에 더 필요한 의존성 (inventory, order)
@@ -126,12 +140,13 @@ common은 아래를 `compileOnly`로만 갖고 있다. 쓰는 서비스가 직�
 
 ```groovy
 dependencies {
-    implementation "com.freshlink:common:0.2.0"
+    implementation "com.freshlink:common:0.3.0"
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'                 // JPA starter를 쓰면 이미 들어 있다
     implementation platform('io.awspring.cloud:spring-cloud-aws-dependencies:4.2.0')
     implementation 'io.awspring.cloud:spring-cloud-aws-starter-sqs'                    // SqsTemplate, @SqsListener
     implementation 'net.javacrumbs.shedlock:shedlock-spring:7.10.1'
     implementation 'net.javacrumbs.shedlock:shedlock-provider-jdbc-template:7.10.1'   // LockProvider
+    implementation 'org.springframework.boot:spring-boot-starter-zipkin'               // 추적 (v0.3.0 Outbox 추적 잇기). 모든 서비스에 들어간다 (할 일 16)
 }
 ```
 
@@ -192,6 +207,12 @@ freshlink:
     outbox:
       publish-interval: 1s   # 기본 1s
       batch-size: 100        # 기본 100
+
+spring:
+  cloud:
+    aws:
+      sqs:
+        observation-enabled: true   # v0.3.0: 받는 쪽이 traceparent 속성으로 추적을 잇는다. 보내는 SqsTemplate도 구간을 남긴다
 ```
 
 ### 4-4. 코드에서 쓰는 모습
@@ -230,14 +251,14 @@ public Order create(...) {
 ## 5. 버전 규칙
 
 - SemVer 태그 `vMAJOR.MINOR.PATCH` (예: `v0.1.0` → `v0.2.0`). 태그를 push하면 `publish.yml`이 테스트 뒤 GitHub Packages에 배포한다. 태그는 사람이 단다.
-- 버전은 `build.gradle`이 태그 이름에서 읽는다 (`v0.2.0` → `0.2.0`). 태그 빌드가 아니면 `0.2.0-SNAPSHOT`.
+- 버전은 `build.gradle`이 태그 이름에서 읽는다 (`v0.3.0` → `0.3.0`). 태그 빌드가 아니면 `0.3.0-SNAPSHOT`.
 - 0.x 동안은 쪽지 형식이 바뀔 수 있다. 필드 추가 = MINOR, 삭제·이름·타입 변경 = 호환이 깨진다. **버전을 올릴 때 이태우·김경우에게 알린다.**
 
 ## 6. 빌드하기
 
 ```bash
 ./gradlew build                 # 컴파일 + 테스트 (Windows: gradlew.bat build)
-./gradlew publishToMavenLocal   # ~/.m2에 0.2.0-SNAPSHOT
+./gradlew publishToMavenLocal   # ~/.m2에 0.3.0-SNAPSHOT
 ```
 
 Outbox·멱등 테스트는 MySQL이 필요하다. 기본은 Testcontainers가 Docker로 MySQL 8.4를 띄운다(GitHub Actions에는 Docker가 있다). Docker가 없으면 이미 떠 있는 MySQL을 환경 변수로 준다. 테스트가 그 DB의 `outbox`·`processed_message`·`shedlock` 표를 지우고 다시 만들므로 **시험 전용 스키마**만 쓴다.

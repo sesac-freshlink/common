@@ -2,6 +2,7 @@ package com.freshlink.common.outbox;
 
 import com.freshlink.common.message.BaseMessage;
 import com.freshlink.common.message.MessageJson;
+import com.freshlink.common.tracing.OutboxTracing;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -20,20 +21,29 @@ import java.util.Objects;
  * }
  * }</pre>
  *
+ * <p>v0.3.0부터 지금 요청의 추적({@code traceparent})을 {@code trace_parent} 칸에 같이 적는다. 발행기가 이 값을 이어
+ * SQS 너머까지 같은 traceId로 보이게 한다. 추적이 없으면 NULL이다.
+ *
  * <p>트랜잭션 전파 MANDATORY와 같다. 트랜잭션 밖에서 부르면 {@link IllegalTransactionStateException}이 난다.
  * "같은 트랜잭션"을 실수로 빼먹지 못하게 하려는 것이라 프록시 설정과 상관없이 코드에서 직접 확인한다.
  */
 public class OutboxWriter {
 
     private static final String INSERT_SQL = """
-            INSERT INTO outbox (message_id, message_type, queue_name, group_id, payload, published, created_at)
-            VALUES (?, ?, ?, ?, ?, FALSE, NOW(6))
+            INSERT INTO outbox (message_id, message_type, queue_name, group_id, payload, trace_parent, published, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, FALSE, NOW(6))
             """;
 
     private final JdbcTemplate jdbcTemplate;
+    private final OutboxTracing tracing;
 
     public OutboxWriter(JdbcTemplate jdbcTemplate) {
+        this(jdbcTemplate, OutboxTracing.NOOP);
+    }
+
+    public OutboxWriter(JdbcTemplate jdbcTemplate, OutboxTracing tracing) {
         this.jdbcTemplate = jdbcTemplate;
+        this.tracing = Objects.requireNonNull(tracing, "tracing");
     }
 
     /**
@@ -51,7 +61,8 @@ public class OutboxWriter {
         }
         String groupId = isFifo(queueName) ? message.messageGroupId() : null;
         jdbcTemplate.update(INSERT_SQL,
-                message.messageId(), message.type().name(), queueName, groupId, MessageJson.toJson(message));
+                message.messageId(), message.type().name(), queueName, groupId, MessageJson.toJson(message),
+                tracing.currentTraceParent());
     }
 
     static boolean isFifo(String queueName) {
