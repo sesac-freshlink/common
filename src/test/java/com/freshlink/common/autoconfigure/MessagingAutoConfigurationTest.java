@@ -1,6 +1,8 @@
 package com.freshlink.common.autoconfigure;
 
 import com.freshlink.common.idempotency.ProcessedMessages;
+import com.freshlink.common.outbox.CleanupProperties;
+import com.freshlink.common.outbox.MessageCleaner;
 import com.freshlink.common.outbox.OutboxProperties;
 import com.freshlink.common.outbox.OutboxPublisher;
 import com.freshlink.common.outbox.OutboxWriter;
@@ -109,5 +111,31 @@ class MessagingAutoConfigurationTest {
                         .hasSingleBean(OutboxWriter.class)
                         .hasSingleBean(OutboxPublisher.class)
                         .doesNotHaveBean(OutboxTracing.class));
+    }
+
+    @Test
+    @DisplayName("v0.4.0: 정리기는 기본으로 켜지고 기본값은 1시간·7일·30일·1000개")
+    void cleanerOnByDefault() {
+        runner.withBean(LockProvider.class, () -> config -> Optional.empty())
+                .withPropertyValues("freshlink.messaging.enabled=true")
+                .run(context -> {
+                    assertThat(context).hasNotFailed().hasSingleBean(MessageCleaner.class);
+                    CleanupProperties properties = context.getBean(CleanupProperties.class);
+                    assertThat(properties.interval()).isEqualTo(Duration.ofHours(1));
+                    assertThat(properties.outboxRetention()).isEqualTo(Duration.ofDays(7));
+                    assertThat(properties.processedRetention()).isEqualTo(Duration.ofDays(30));
+                    assertThat(properties.batchSize()).isEqualTo(1000);
+                    assertThat(context.getBean(MessageCleaner.class).isRunning()).isTrue();
+                });
+    }
+
+    @Test
+    @DisplayName("v0.4.0: freshlink.messaging.cleanup.enabled=false면 정리기를 만들지 않는다")
+    void cleanerCanBeDisabled() {
+        runner.withBean(LockProvider.class, () -> config -> Optional.empty())
+                .withPropertyValues("freshlink.messaging.enabled=true", "freshlink.messaging.cleanup.enabled=false")
+                .run(context -> assertThat(context).hasNotFailed()
+                        .doesNotHaveBean(MessageCleaner.class)
+                        .hasSingleBean(OutboxPublisher.class));
     }
 }
