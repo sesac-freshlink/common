@@ -5,7 +5,7 @@
 | 항목 | 내용 |
 | --- | --- |
 | 담당 | 김진아 |
-| 관련 기능 ID | E-03 Outbox 발행기, E-04 멱등 처리, I-03 관측성(Outbox 추적 잇기, v0.3.0) |
+| 관련 기능 ID | E-03 Outbox 발행기(v0.4.0 보낸 줄 정리), E-04 멱등 처리, I-03 관측성(Outbox 추적 잇기, v0.3.0) |
 | 기술 | Java 21, Jackson 3, 버전은 Spring Boot 4.0.8 BOM으로 맞춤(라이브러리, 실행 jar 없음). Outbox·멱등(v0.2.0)은 Spring JDBC, Spring Cloud AWS 4.2.0 (SQS), ShedLock 7.10.1을, 추적 잇기(v0.3.0)는 Micrometer Tracing을 쓰지만 전부 `compileOnly`라 쓰지 않는 서비스에는 끌려가지 않는다 |
 | 배포 | `v*` 태그 → GitHub Packages (Maven) `com.freshlink:common:<버전>` |
 | 사용처 | inventory-service, order-service, member-service(오류 응답), logistics-simulator(DTO) |
@@ -16,7 +16,7 @@
 
 inventory-service, order-service, logistics-simulator가 SQS로 쪽지를 주고받는다. 쪽지 클래스를 각자 만들면 필드가 어긋나서 서로 못 읽는다. 그래서 여기 한 번만 만들고 세 서비스가 같은 버전을 가져다 쓴다. Outbox·멱등 코드도 같은 이유로 여기 둔다.
 
-## 2. 들어 있는 것 (v0.3.0)
+## 2. 들어 있는 것 (v0.4.0)
 
 ### 쪽지 DTO 7종 (`com.freshlink.common.message`)
 
@@ -63,6 +63,7 @@ DB를 바꾸고 쪽지를 보내는 서비스(inventory, order)가 쓴다. 설�
 | --- | --- |
 | `OutboxWriter.save(queueName, message)` | 쪽지를 비즈니스 변경과 **같은 트랜잭션**으로 `outbox` 표에 적는다. 트랜잭션 밖에서 부르면 예외(전파 MANDATORY와 같음). `.fifo` 큐면 `group_id = storeId` |
 | `OutboxPublisher` | `publish-interval`(기본 1초)마다 안 보낸 행을 `id` 순으로 최대 `batch-size`(기본 100)개 꺼내 `SqsTemplate`으로 보낸다. FIFO면 그룹 ID = storeId, 중복 제거 ID = messageId. ShedLock 잠금 `freshlink-outbox-publisher`로 한 번에 한 파드만 보낸다. 보내다 실패하면 그 회차를 멈추고 다음 회차에 그 행부터 다시 보낸다(점포 안 순서 유지) |
+| `MessageCleaner` (v0.4.0) | `interval`(기본 1시간)마다 보낸 지 `outbox-retention`(기본 7일) 넘은 `outbox` 행(`published = TRUE`)과 `processed-retention`(기본 30일) 넘은 `processed_message` 행을 `batch-size`(기본 1000)개씩 나눠 지운다. 안 보낸 행은 지우지 않는다. ShedLock 잠금 `freshlink-message-cleanup`(발행기와 다른 이름이라 지우는 동안에도 발행은 계속된다)으로 한 파드만 지운다. `processed-retention`은 SQS 본 큐 4일 + DLQ 14일 = 18일보다 길어야 한다(짧으면 DLQ에서 재처리한 쪽지를 두 번 반영한다). 표 변경·Flyway 파일은 없다 |
 | `ProcessedMessages.markIfNew(messageId)` | 처음 보는 messageId면 `processed_message`에 적고 `true`, 이미 있으면 `false`. 쪽지 처리와 **같은 트랜잭션**이어야 한다(밖에서 부르면 예외). `INSERT IGNORE`의 행 수로 판단해서 중복이어도 트랜잭션이 롤백 전용으로 바뀌지 않는다 |
 
 ### Outbox 추적 잇기 (v0.3.0, I-03, `com.freshlink.common.tracing`)
@@ -207,6 +208,12 @@ freshlink:
     outbox:
       publish-interval: 1s   # 기본 1s
       batch-size: 100        # 기본 100
+    cleanup:                 # v0.4.0. 보낸 줄·처리 기록 정리. 기본값이면 적지 않아도 된다
+      enabled: true          # 기본 true
+      interval: 1h           # 기본 1h
+      outbox-retention: 7d   # 기본 7d. 보낸 지 이만큼 지난 outbox 행을 지운다
+      processed-retention: 30d   # 기본 30d. 18일(SQS 본 큐 + DLQ)보다 길어야 한다
+      batch-size: 1000       # 기본 1000
 
 spring:
   cloud:

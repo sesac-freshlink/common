@@ -1,6 +1,8 @@
 package com.freshlink.common.autoconfigure;
 
 import com.freshlink.common.idempotency.ProcessedMessages;
+import com.freshlink.common.outbox.CleanupProperties;
+import com.freshlink.common.outbox.MessageCleaner;
 import com.freshlink.common.outbox.OutboxProperties;
 import com.freshlink.common.outbox.OutboxPublisher;
 import com.freshlink.common.outbox.OutboxWriter;
@@ -30,13 +32,15 @@ import java.time.Clock;
  *
  * <p>v0.3.0: Micrometer Tracing이 클래스 경로에 있으면(서비스의 {@code spring-boot-starter-zipkin}) Outbox가 추적을 잇는다.
  * 없으면 {@link OutboxTracing#NOOP}.
+ *
+ * <p>v0.4.0: 오래된 보낸 줄·처리 기록을 지우는 {@link MessageCleaner}. {@code freshlink.messaging.cleanup.enabled=false}로 끈다.
  */
 @AutoConfiguration(afterName = {
         "org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration",
         "io.awspring.cloud.autoconfigure.sqs.SqsAutoConfiguration"
 })
 @ConditionalOnProperty(prefix = "freshlink.messaging", name = "enabled", havingValue = "true")
-@EnableConfigurationProperties(OutboxProperties.class)
+@EnableConfigurationProperties({OutboxProperties.class, CleanupProperties.class})
 public class MessagingAutoConfiguration {
 
     @Configuration(proxyBeanMethods = false)
@@ -59,6 +63,19 @@ public class MessagingAutoConfiguration {
     @Bean
     public ProcessedMessages freshlinkProcessedMessages(DataSource dataSource) {
         return new ProcessedMessages(new JdbcTemplate(dataSource));
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "freshlink.messaging.cleanup", name = "enabled", havingValue = "true", matchIfMissing = true)
+    public MessageCleaner freshlinkMessageCleaner(DataSource dataSource, ObjectProvider<LockProvider> lockProvider,
+                                                  CleanupProperties properties) {
+        // LockProvider가 없으면 아래 발행기가 앱 기동을 실패시킨다
+        LockProvider provider = lockProvider.getIfAvailable();
+        if (provider == null) {
+            throw new IllegalStateException("freshlink.messaging.enabled=true에는 ShedLock LockProvider 빈이 필요하다 (common README 4장)");
+        }
+        return new MessageCleaner(new JdbcTemplate(dataSource), new DefaultLockingTaskExecutor(provider),
+                properties, Clock.systemUTC());
     }
 
     @Bean
