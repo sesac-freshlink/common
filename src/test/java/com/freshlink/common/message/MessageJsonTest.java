@@ -1,6 +1,8 @@
 package com.freshlink.common.message;
 
 import com.freshlink.common.message.command.*;
+import com.freshlink.common.message.notification.NotificationKind;
+import com.freshlink.common.message.notification.NotificationMessage;
 import com.freshlink.common.message.result.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -28,7 +30,12 @@ class MessageJsonTest {
                 DisposeMessage.of(7L, 1L, 300L, 5, "c1a2b3c4-0000-4000-8000-000000000001"),
                 ReservedMessage.of(1024L, 1L, 15L, "매운 컵라면 115g", 2, 3500L, List.of(
                         new ReservedLot(300L, 2, OffsetDateTime.parse("2026-10-20T23:59:59+09:00")))),
-                ReserveFailedMessage.of(1024L, 1L, 15L, ReserveFailReason.OUT_OF_STOCK, 0)
+                ReserveFailedMessage.of(1024L, 1L, 15L, ReserveFailReason.OUT_OF_STOCK, 0),
+                NotificationMessage.expiryImminent(1L, 15L, "매운 컵라면 115g", 300L,
+                        OffsetDateTime.parse("2026-10-31T23:59:59+09:00"), 4),
+                NotificationMessage.expired(1L, 15L, "매운 컵라면 115g", 300L,
+                        OffsetDateTime.parse("2026-10-30T23:59:59+09:00"), 2),
+                NotificationMessage.restocked(1L, 15L, "매운 컵라면 115g", 20)
         );
     }
 
@@ -148,5 +155,35 @@ class MessageJsonTest {
         assertThat(a.messageId()).isNotBlank().isNotEqualTo(b.messageId());
         assertThat(a.createdAt()).isNotNull();
         assertThat(a.createdAt().getOffset()).isEqualTo(MessageJson.KST);
+    }
+
+    @Test
+    void 인수인계_NOTIFICATION_예시_JSON을_읽으면_NotificationMessage() {
+        String json = """
+                {"messageId":"6f1c2a9e-0000-4000-8000-000000000001","type":"NOTIFICATION",
+                 "createdAt":"2026-10-31T00:00:00+09:00","kind":"EXPIRY_IMMINENT","storeId":1,"userId":null,
+                 "productId":15,"productName":"매운 컵라면 115g","lotId":300,
+                 "expiresAt":"2026-10-31T23:59:59+09:00","quantity":4}
+                """;
+
+        BaseMessage read = MessageJson.fromJson(json);
+
+        assertThat(read).isInstanceOf(NotificationMessage.class);
+        NotificationMessage n = (NotificationMessage) read;
+        assertThat(n.kind()).isEqualTo(NotificationKind.EXPIRY_IMMINENT);
+        assertThat(n.storeId()).isEqualTo(1L);
+        assertThat(n.userId()).isNull();
+        assertThat(n.expiresAt()).isEqualTo(OffsetDateTime.parse("2026-10-31T23:59:59+09:00"));
+        assertThat(n.quantity()).isEqualTo(4);
+    }
+
+    @Test
+    void RESTOCKED는_lot과_유통기한_없이_간다() {
+        NotificationMessage m = NotificationMessage.restocked(1L, 15L, "매운 컵라면 115g", 20);
+
+        assertThat(m.kind()).isEqualTo(NotificationKind.RESTOCKED);
+        assertThat(m.lotId()).isNull();
+        assertThat(m.expiresAt()).isNull();
+        assertThat(MessageJson.toJson(m)).contains("\"kind\":\"RESTOCKED\"", "\"quantity\":20");
     }
 }
