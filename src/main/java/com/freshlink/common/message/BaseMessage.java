@@ -10,6 +10,7 @@ import com.freshlink.common.message.command.InboundMessage;
 import com.freshlink.common.message.command.ReleaseMessage;
 import com.freshlink.common.message.command.ReserveMessage;
 import com.freshlink.common.message.command.ReturnMessage;
+import com.freshlink.common.message.notification.NotificationMessage;
 import com.freshlink.common.message.result.ReserveFailedMessage;
 import com.freshlink.common.message.result.ReservedMessage;
 
@@ -36,7 +37,8 @@ import java.util.UUID;
         @JsonSubTypes.Type(value = ReturnMessage.class, name = "RETURN"),
         @JsonSubTypes.Type(value = DisposeMessage.class, name = "DISPOSE"),
         @JsonSubTypes.Type(value = ReservedMessage.class, name = "RESERVED"),
-        @JsonSubTypes.Type(value = ReserveFailedMessage.class, name = "RESERVE_FAILED")
+        @JsonSubTypes.Type(value = ReserveFailedMessage.class, name = "RESERVE_FAILED"),
+        @JsonSubTypes.Type(value = NotificationMessage.class, name = "NOTIFICATION")
 })
 @JsonIgnoreProperties(ignoreUnknown = true)
 public interface BaseMessage extends StoreScoped {

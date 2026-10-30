@@ -20,5 +20,7 @@ public enum MessageType {
     /** 예약 성공 결과 (inventory-service → inventory-results) */
     RESERVED,
     /** 예약 실패 결과 (inventory-service → inventory-results) */
-    RESERVE_FAILED
+    RESERVE_FAILED,
+    /** 화면 알림 재료: 유통기한 임박·경과, 재입고 (inventory-service → notification-events, v0.6.0) */
+    NOTIFICATION
 }
