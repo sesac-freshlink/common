@@ -35,7 +35,10 @@ class MessageJsonTest {
                         OffsetDateTime.parse("2026-10-31T23:59:59+09:00"), 4),
                 NotificationMessage.expired(1L, 15L, "매운 컵라면 115g", 300L,
                         OffsetDateTime.parse("2026-10-30T23:59:59+09:00"), 2),
-                NotificationMessage.restocked(1L, 15L, "매운 컵라면 115g", 20)
+                NotificationMessage.restocked(1L, 15L, "매운 컵라면 115g", 20),
+                NotificationMessage.newOrder(1L, 501L, "FL-20261030-0001", 15L, "매운 컵라면 115g", 2),
+                NotificationMessage.pickupReady(1L, "역삼점", "cognito-sub-1", 501L, "FL-20261030-0001",
+                        15L, "매운 컵라면 115g", 2)
         );
     }
 
@@ -49,7 +52,8 @@ class MessageJsonTest {
         assertThat(read).isEqualTo(original);
         assertThat(json).contains("\"type\":\"" + original.type().name() + "\"");
         assertThat(json.split("\"type\"").length - 1).as("type 키는 한 번만").isEqualTo(1);
-        assertThat(json).contains("\"createdAt\":\"" + original.createdAt() + "\"");
+        // createdAt 값은 위 isEqualTo로 본다. 문자열로 비교하면 정각 00초일 때 toString이 초를 빼서 틀린다
+        assertThat(json).contains("\"createdAt\":\"");
         assertThat(json).contains("+09:00");
     }
 
@@ -185,5 +189,33 @@ class MessageJsonTest {
         assertThat(m.lotId()).isNull();
         assertThat(m.expiresAt()).isNull();
         assertThat(MessageJson.toJson(m)).contains("\"kind\":\"RESTOCKED\"", "\"quantity\":20");
+    }
+
+    @Test
+    void PICKUP_READY는_주문한_고객과_주문을_싣는다() {
+        NotificationMessage m = NotificationMessage.pickupReady(1L, "역삼점", "cognito-sub-1", 501L,
+                "FL-20261030-0001", 15L, "매운 컵라면 115g", 2);
+
+        NotificationMessage read = (NotificationMessage) MessageJson.fromJson(MessageJson.toJson(m));
+
+        assertThat(read.kind()).isEqualTo(NotificationKind.PICKUP_READY);
+        assertThat(read.userId()).isEqualTo("cognito-sub-1");
+        assertThat(read.orderId()).isEqualTo(501L);
+        assertThat(read.orderNo()).isEqualTo("FL-20261030-0001");
+        assertThat(read.storeName()).isEqualTo("역삼점");
+    }
+
+    @Test
+    void 주문_칸이_없는_v0_6_0_JSON도_읽는다() {
+        String json = """
+                {"messageId":"6f1c2a9e-0000-4000-8000-000000000002","type":"NOTIFICATION",
+                 "createdAt":"2026-10-31T00:00:00+09:00","kind":"RESTOCKED","storeId":1,
+                 "productId":15,"productName":"매운 컵라면 115g","quantity":20}
+                """;
+
+        NotificationMessage read = (NotificationMessage) MessageJson.fromJson(json);
+
+        assertThat(read.orderId()).isNull();
+        assertThat(read.storeName()).isNull();
     }
 }
