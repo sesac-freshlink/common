@@ -5,7 +5,7 @@ import com.freshlink.common.message.MessageType;
 
 import java.time.OffsetDateTime;
 
-/** RELEASE: 결제 실패나 시간 초과로 예약 해제. order-service → inventory-commands.fifo */
+/** RELEASE: 결제 실패·시간 초과·결제 전 고객 취소로 예약 해제. order-service → inventory-commands.fifo */
 public record ReleaseMessage(
         String messageId,
         OffsetDateTime createdAt,
