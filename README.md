@@ -16,18 +16,20 @@
 
 inventory-service, order-service, logistics-simulator가 SQS로 쪽지를 주고받는다. 쪽지 클래스를 각자 만들면 필드가 어긋나서 서로 못 읽는다. 그래서 여기 한 번만 만들고 세 서비스가 같은 버전을 가져다 쓴다. Outbox·멱등 코드도 같은 이유로 여기 둔다.
 
-## 2. 들어 있는 것 (v0.4.0)
+## 2. 들어 있는 것 (v0.5.0)
 
-### 쪽지 DTO 7종 (`com.freshlink.common.message`)
+### 쪽지 DTO 8종 (`com.freshlink.common.message`)
 
 형식의 진실은 .github 레포 `docs/백엔드-공통작업-인수인계.md` 3-3이다. 모든 쪽지는 JSON이고 공통으로 `messageId`(UUID), `type`, `createdAt`(ISO-8601 `+09:00`)을 가진다.
 
 | 큐 | type | 클래스 | 보내는 곳 |
 | --- | --- | --- | --- |
 | `inventory-commands.fifo` (그룹 = storeId) | INBOUND | `InboundMessage` | logistics-simulator |
-| | RESERVE, CONFIRM, RELEASE | `ReserveMessage`, `ConfirmMessage`, `ReleaseMessage` | order-service |
+| | RESERVE, CONFIRM, RELEASE, RETURN | `ReserveMessage`, `ConfirmMessage`, `ReleaseMessage`, `ReturnMessage` | order-service |
 | | DISPOSE | `DisposeMessage` | inventory-service |
 | `inventory-results` | RESERVED, RESERVE_FAILED | `ReservedMessage`, `ReserveFailedMessage` | inventory-service |
+
+v0.5.0에서 RELEASE 사유에 `CANCELED`(결제 전 고객 취소, A7)를, 새 쪽지 `RETURN`(환불 뒤 판매 재고 복원, A10, `orderId`·`storeId`만)을 더했다. 옛 버전은 이 값을 읽지 못해 처리가 실패하므로 **받는 쪽(inventory-service)이 v0.5.0으로 먼저 배포된 뒤** order-service가 보내기 시작한다.
 
 ```java
 // 보내기: 팩토리가 messageId와 createdAt을 채운다
@@ -90,7 +92,7 @@ common/
 ├── .github/workflows/publish.yml      # v* 태그 → 테스트 → GitHub Packages 배포
 ├── src/main/java/com/freshlink/common/
 │   ├── message/       # BaseMessage, StoreScoped, MessageType, MessageJson (공통 뼈대와 변환기)
-│   │   ├── command/   # inventory-commands.fifo로 가는 것: Inbound(+InboundItem)·Reserve·Confirm·Release(+ReleaseReason)·Dispose
+│   │   ├── command/   # inventory-commands.fifo로 가는 것: Inbound(+InboundItem)·Reserve·Confirm·Release(+ReleaseReason)·Return·Dispose
 │   │   ├── result/    # inventory-results로 가는 것: Reserved(+ReservedLot)·ReserveFailed(+ReserveFailReason)
 │   │   └── json/      # ExpiryDateDeserializer
 │   ├── error/         # ErrorCode, BusinessException, ErrorResponse

@@ -16,13 +16,15 @@ class MessageJsonTest {
 
     static final OffsetDateTime T0 = OffsetDateTime.parse("2026-10-15T12:30:00+09:00");
 
-    static Stream<BaseMessage> allSeven() {
+    static Stream<BaseMessage> allTypes() {
         return Stream.of(
                 InboundMessage.of(1L, "SHP-20261015-001", List.of(
                         new InboundItem("APL-001", 30, OffsetDateTime.parse("2026-10-20T23:59:59+09:00")))),
                 ReserveMessage.of(1024L, 1L, 15L, 2),
                 ConfirmMessage.of(1024L, 1L),
                 ReleaseMessage.of(1024L, 1L, ReleaseReason.PAYMENT_FAILED),
+                ReleaseMessage.of(1024L, 1L, ReleaseReason.CANCELED),
+                ReturnMessage.of(1024L, 1L),
                 DisposeMessage.of(7L, 1L, 300L, 5, "c1a2b3c4-0000-4000-8000-000000000001"),
                 ReservedMessage.of(1024L, 1L, 15L, "매운 컵라면 115g", 2, 3500L, List.of(
                         new ReservedLot(300L, 2, OffsetDateTime.parse("2026-10-20T23:59:59+09:00")))),
@@ -31,7 +33,7 @@ class MessageJsonTest {
     }
 
     @ParameterizedTest
-    @MethodSource("allSeven")
+    @MethodSource("allTypes")
     void 객체_JSON_BaseMessage_왕복하면_같은_클래스_같은_값(BaseMessage original) {
         String json = MessageJson.toJson(original);
         BaseMessage read = MessageJson.fromJson(json);
@@ -69,6 +71,17 @@ class MessageJsonTest {
         assertThat(r.storeId()).isEqualTo(1L);
         assertThat(r.productId()).isEqualTo(15L);
         assertThat(r.quantity()).isEqualTo(1);
+    }
+
+    @Test
+    void RETURN은_orderId_storeId만_싣고_RELEASE_사유_CANCELED도_문자열로_간다() {
+        String ret = MessageJson.toJson(ReturnMessage.of(1024L, 1L));
+        assertThat(ret).contains("\"type\":\"RETURN\"", "\"orderId\":1024", "\"storeId\":1");
+        assertThat(ret).doesNotContain("productId", "lotId", "quantity");
+
+        String rel = MessageJson.toJson(ReleaseMessage.of(1024L, 1L, ReleaseReason.CANCELED));
+        assertThat(rel).contains("\"reason\":\"CANCELED\"");
+        assertThat(MessageJson.fromJson(rel, ReleaseMessage.class).reason()).isEqualTo(ReleaseReason.CANCELED);
     }
 
     @Test
