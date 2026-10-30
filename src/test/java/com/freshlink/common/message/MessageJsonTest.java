@@ -52,7 +52,8 @@ class MessageJsonTest {
         assertThat(read).isEqualTo(original);
         assertThat(json).contains("\"type\":\"" + original.type().name() + "\"");
         assertThat(json.split("\"type\"").length - 1).as("type 키는 한 번만").isEqualTo(1);
-        assertThat(json).contains("\"createdAt\":\"" + original.createdAt() + "\"");
+        // createdAt 값은 위 isEqualTo로 본다. 문자열로 비교하면 정각 00초일 때 toString이 초를 빼서 틀린다
+        assertThat(json).contains("\"createdAt\":\"");
         assertThat(json).contains("+09:00");
     }
 
