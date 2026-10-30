@@ -9,6 +9,7 @@ import com.freshlink.common.message.command.DisposeMessage;
 import com.freshlink.common.message.command.InboundMessage;
 import com.freshlink.common.message.command.ReleaseMessage;
 import com.freshlink.common.message.command.ReserveMessage;
+import com.freshlink.common.message.command.ReturnMessage;
 import com.freshlink.common.message.result.ReserveFailedMessage;
 import com.freshlink.common.message.result.ReservedMessage;
 
@@ -32,6 +33,7 @@ import java.util.UUID;
         @JsonSubTypes.Type(value = ReserveMessage.class, name = "RESERVE"),
         @JsonSubTypes.Type(value = ConfirmMessage.class, name = "CONFIRM"),
         @JsonSubTypes.Type(value = ReleaseMessage.class, name = "RELEASE"),
+        @JsonSubTypes.Type(value = ReturnMessage.class, name = "RETURN"),
         @JsonSubTypes.Type(value = DisposeMessage.class, name = "DISPOSE"),
         @JsonSubTypes.Type(value = ReservedMessage.class, name = "RESERVED"),
         @JsonSubTypes.Type(value = ReserveFailedMessage.class, name = "RESERVE_FAILED")

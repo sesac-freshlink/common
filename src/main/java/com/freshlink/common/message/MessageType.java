@@ -13,6 +13,8 @@ public enum MessageType {
     CONFIRM,
     /** 예약 해제 (order-service → inventory-commands.fifo) */
     RELEASE,
+    /** 환불 뒤 판매 재고 복원 (order-service → inventory-commands.fifo, A10, v0.5.0) */
+    RETURN,
     /** 폐기 (inventory-service → inventory-commands.fifo) */
     DISPOSE,
     /** 예약 성공 결과 (inventory-service → inventory-results) */
