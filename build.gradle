@@ -9,7 +9,7 @@ plugins {
 
 group = 'com.freshlink'
 
-// 버전은 태그에서 받는다. GitHub Actions에서 v0.6.0 태그로 빌드하면 0.6.0, 그 밖에는 0.6.0-SNAPSHOT.
+// 버전은 태그에서 받는다. GitHub Actions에서 v0.7.0 태그로 빌드하면 0.7.0, 그 밖에는 0.7.0-SNAPSHOT.
 // SNAPSHOT은 ./gradlew publishToMavenLocal 로 내 PC에서만 시험한다 (README 6장).
 def resolveVersion() {
     def refType = System.getenv('GITHUB_REF_TYPE')
@@ -17,7 +17,7 @@ def resolveVersion() {
     if (refType == 'tag' && refName != null && refName.startsWith('v')) {
         return refName.substring(1)
     }
-    return '0.6.0-SNAPSHOT'
+    return '0.7.0-SNAPSHOT'
 }
 version = resolveVersion()
 

@@ -16,7 +16,7 @@
 
 inventory-service, order-service, logistics-simulator가 SQS로 쪽지를 주고받는다. 쪽지 클래스를 각자 만들면 필드가 어긋나서 서로 못 읽는다. 그래서 여기 한 번만 만들고 세 서비스가 같은 버전을 가져다 쓴다. Outbox·멱등 코드도 같은 이유로 여기 둔다.
 
-## 2. 들어 있는 것 (v0.6.0)
+## 2. 들어 있는 것 (v0.7.0)
 
 ### 쪽지 DTO 9종 (`com.freshlink.common.message`)
 
@@ -28,11 +28,13 @@ inventory-service, order-service, logistics-simulator가 SQS로 쪽지를 주고
 | | RESERVE, CONFIRM, RELEASE, RETURN | `ReserveMessage`, `ConfirmMessage`, `ReleaseMessage`, `ReturnMessage` | order-service |
 | | DISPOSE | `DisposeMessage` | inventory-service |
 | `inventory-results` | RESERVED, RESERVE_FAILED | `ReservedMessage`, `ReserveFailedMessage` | inventory-service |
-| `notification-events` (표준) | NOTIFICATION | `NotificationMessage` | inventory-service |
+| `notification-events` (표준) | NOTIFICATION | `NotificationMessage` | inventory-service, order-service (v0.7.0) |
 
 v0.5.0에서 RELEASE 사유에 `CANCELED`(결제 전 고객 취소, A7)를, 새 쪽지 `RETURN`(환불 뒤 판매 재고 복원, A10, `orderId`·`storeId`만)을 더했다. 옛 버전은 이 값을 읽지 못해 처리가 실패하므로 **받는 쪽(inventory-service)이 v0.5.0으로 먼저 배포된 뒤** order-service가 보내기 시작한다.
 
 v0.6.0에서 화면 알림 쪽지 `NOTIFICATION`(`NotificationMessage`)을 더했다. 종류(`kind`)는 `EXPIRY_IMMINENT`·`EXPIRED`(점주)와 `RESTOCKED`(재입고 알림을 신청한 고객) 세 가지다. 받는 곳은 notification-service 하나이고, 알림 문구와 받는 사람은 notification-service가 정한다. 형식과 보내는 때는 [.github 화면 알림 문서](https://github.com/sesac-freshlink/.github/blob/main/docs/기능이해/화면-알림.md)가 진실이다.
+
+v0.7.0에서 주문 알림 두 종류를 더했다: `NEW_ORDER`(결제 끝난 새 픽업 주문 → 점주), `PICKUP_READY`(점주가 픽업 준비 완료 → 주문한 고객, `userId` = 주문의 `customerId`). 칸 `orderId`·`orderNo`·`storeName`이 늘었다. 보내는 곳은 order-service다. 옛 notification-service는 새 종류를 모르므로 **notification-service가 v0.7.0으로 먼저 배포된 뒤** order가 보낸다.
 
 ```java
 // inventory 유통기한 스케줄러: lot을 IMMINENT로 바꾸는 같은 트랜잭션에서
