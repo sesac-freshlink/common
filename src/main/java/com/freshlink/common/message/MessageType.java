@@ -2,7 +2,7 @@ package com.freshlink.common.message;
 
 /**
  * 쪽지 종류. JSON의 {@code type} 값과 같다.
- * 명세는 .github 레포 docs/백엔드-공통작업-인수인계.md 3-3.
+ * 명세는 .github 레포 docs/인수인계/백엔드-공통작업.md 3-3.
  */
 public enum MessageType {
     /** 물류센터 입고 (logistics-simulator → inventory-commands.fifo) */

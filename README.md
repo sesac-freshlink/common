@@ -20,7 +20,7 @@ inventory-service, order-service, logistics-simulator가 SQS로 쪽지를 주고
 
 ### 쪽지 DTO 8종 (`com.freshlink.common.message`)
 
-형식의 진실은 .github 레포 `docs/백엔드-공통작업-인수인계.md` 3-3이다. 모든 쪽지는 JSON이고 공통으로 `messageId`(UUID), `type`, `createdAt`(ISO-8601 `+09:00`)을 가진다.
+형식의 진실은 .github 레포 `docs/인수인계/백엔드-공통작업.md` 3-3이다. 모든 쪽지는 JSON이고 공통으로 `messageId`(UUID), `type`, `createdAt`(ISO-8601 `+09:00`)을 가진다.
 
 | 큐 | type | 클래스 | 보내는 곳 |
 | --- | --- | --- | --- |
@@ -55,11 +55,11 @@ if (received instanceof ReserveMessage r) { ... }
 | `BusinessException` | 서비스 코드에서 `throw new BusinessException(OrderErrorCode.ORDER_NOT_FOUND)` |
 | `ErrorResponse` (record) | 모든 서비스의 응답 모양 `{"code", "message", "traceId"}` |
 
-핸들러(`GlobalExceptionHandler`)는 각 서비스 레포에 있다. 이유는 .github 레포 `docs/백엔드-공통-규칙.md` 6장.
+핸들러(`GlobalExceptionHandler`)는 각 서비스 레포에 있다. 이유는 .github 레포 `docs/규칙/백엔드-공통-규칙.md` 6장.
 
 ### Outbox 발행기 (E-03, `com.freshlink.common.outbox`)와 멱등 처리 (E-04, `com.freshlink.common.idempotency`)
 
-DB를 바꾸고 쪽지를 보내는 서비스(inventory, order)가 쓴다. 설계와 이유는 .github 레포 `docs/common-v0.2.0-인수인계.md`.
+DB를 바꾸고 쪽지를 보내는 서비스(inventory, order)가 쓴다. 설계와 이유는 .github 레포 `docs/인수인계/common-v0.2.0.md`.
 
 | 클래스 | 하는 일 |
 | --- | --- |
