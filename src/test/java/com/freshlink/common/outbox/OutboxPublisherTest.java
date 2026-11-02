@@ -144,6 +144,51 @@ class OutboxPublisherTest {
     }
 
     @Test
+    @DisplayName("v0.7.1: 한 그룹에서 실패하면 그 그룹 뒤 행만 건너뛰고, 다른 점포·다른 큐 쪽지는 이번 회차에 보낸다")
+    void failureBlocksOnlySameQueueAndGroup() {
+        ReserveMessage store1First = ReserveMessage.of(10L, 1L, 2L, 3);
+        ReserveFailedMessage standardResult = ReserveFailedMessage.of(11L, 1L, 2L, ReserveFailReason.OUT_OF_STOCK, 0);
+        ReserveMessage store1Second = ReserveMessage.of(12L, 1L, 2L, 3);
+        ReserveMessage store2 = ReserveMessage.of(13L, 2L, 2L, 3);
+        tx.executeWithoutResult(status -> {
+            writer.save(FIFO, store1First);
+            writer.save(STANDARD, standardResult);
+            writer.save(FIFO, store1Second);
+            writer.save(FIFO, store2);
+        });
+        when(sqs.sendMessage(any(SendMessageRequest.class)))
+                .thenReturn(CompletableFuture.failedFuture(SdkClientException.create("일시 장애")))
+                .thenAnswer(inv -> sent());
+        OutboxPublisher publisher = publisher(jdbcLock());
+
+        assertThat(publisher.publishOnce()).isEqualTo(2);
+        assertThat(sentRequests(3)).extracting(SendMessageRequest::messageBody).containsExactly(
+                payloadOf(store1First.messageId()), payloadOf(standardResult.messageId()), payloadOf(store2.messageId()));
+        assertThat(publishedIds()).containsExactly(standardResult.messageId(), store2.messageId());
+
+        assertThat(publisher.publishOnce()).isEqualTo(2);
+        assertThat(publishedIds()).containsExactly(
+                store1First.messageId(), standardResult.messageId(), store1Second.messageId(), store2.messageId());
+    }
+
+    @Test
+    @DisplayName("v0.7.1: 표준 큐(알림 등) 전송이 실패해도 FIFO 재고 쪽지는 막히지 않는다")
+    void standardQueueFailureDoesNotBlockFifo() {
+        ReserveFailedMessage standardResult = ReserveFailedMessage.of(11L, 1L, 2L, ReserveFailReason.OUT_OF_STOCK, 0);
+        ReserveMessage reserve = ReserveMessage.of(10L, 1L, 2L, 3);
+        tx.executeWithoutResult(status -> {
+            writer.save(STANDARD, standardResult);
+            writer.save(FIFO, reserve);
+        });
+        when(sqs.sendMessage(any(SendMessageRequest.class)))
+                .thenReturn(CompletableFuture.failedFuture(SdkClientException.create("큐 없음")))
+                .thenAnswer(inv -> sent());
+
+        assertThat(publisher(jdbcLock()).publishOnce()).isEqualTo(1);
+        assertThat(publishedIds()).containsExactly(reserve.messageId());
+    }
+
+    @Test
     @DisplayName("잠금을 다른 파드가 잡고 있으면 그 회차는 아무것도 보내지 않는다")
     void lockHeldElsewhere() {
         tx.executeWithoutResult(status -> writer.save(FIFO, ReserveMessage.of(10L, 1L, 2L, 3)));
