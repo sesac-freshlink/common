@@ -23,6 +23,7 @@ class MessageJsonTest {
                 InboundMessage.of(1L, "SHP-20261015-001", List.of(
                         new InboundItem("APL-001", 30, OffsetDateTime.parse("2026-10-20T23:59:59+09:00")))),
                 ReserveMessage.of(1024L, 1L, 15L, 2),
+                ReserveMessage.of(1024L, 1L, 15L, 3, 2),
                 ConfirmMessage.of(1024L, 1L),
                 ReleaseMessage.of(1024L, 1L, ReleaseReason.PAYMENT_FAILED),
                 ReleaseMessage.of(1024L, 1L, ReleaseReason.CANCELED),
@@ -30,7 +31,11 @@ class MessageJsonTest {
                 DisposeMessage.of(7L, 1L, 300L, 5, "c1a2b3c4-0000-4000-8000-000000000001"),
                 ReservedMessage.of(1024L, 1L, 15L, "매운 컵라면 115g", 2, 3500L, List.of(
                         new ReservedLot(300L, 2, OffsetDateTime.parse("2026-10-20T23:59:59+09:00")))),
+                ReservedMessage.of(1024L, 1L, 15L, "매운 컵라면 115g", 3, 3500L, List.of(
+                        ReservedLot.clearance(299L, 2, OffsetDateTime.parse("2026-11-08T23:59:59+09:00"), 2450L),
+                        new ReservedLot(300L, 1, OffsetDateTime.parse("2026-11-12T23:59:59+09:00")))),
                 ReserveFailedMessage.of(1024L, 1L, 15L, ReserveFailReason.OUT_OF_STOCK, 0),
+                ReserveFailedMessage.of(1024L, 1L, 15L, ReserveFailReason.CLEARANCE_SOLD_OUT, 4, 1),
                 NotificationMessage.expiryImminent(1L, 15L, "매운 컵라면 115g", 300L,
                         OffsetDateTime.parse("2026-10-31T23:59:59+09:00"), 4),
                 NotificationMessage.expired(1L, 15L, "매운 컵라면 115g", 300L,
@@ -93,6 +98,69 @@ class MessageJsonTest {
         String rel = MessageJson.toJson(ReleaseMessage.of(1024L, 1L, ReleaseReason.CANCELED));
         assertThat(rel).contains("\"reason\":\"CANCELED\"");
         assertThat(MessageJson.fromJson(rel, ReleaseMessage.class).reason()).isEqualTo(ReleaseReason.CANCELED);
+    }
+
+    @Test
+    void 마감세일_칸이_없는_옛_RESERVE는_마감세일_0으로_읽힌다() {
+        String json = """
+                {"messageId":"m1","type":"RESERVE","createdAt":"2026-10-15T09:00:00+09:00",
+                 "orderId":1024,"storeId":1,"productId":15,"quantity":2}
+                """;
+
+        ReserveMessage r = (ReserveMessage) MessageJson.fromJson(json);
+
+        assertThat(r.clearanceQuantity()).isZero();
+        assertThat(r.regularQuantity()).isEqualTo(2);
+        assertThat(r).isEqualTo(new ReserveMessage("m1", OffsetDateTime.parse("2026-10-15T09:00:00+09:00"), 1024L, 1L, 15L, 2));
+    }
+
+    @Test
+    void 마감세일_RESERVE는_전체_수량과_마감세일_수량을_싣고_기본_수량은_싣지_않는다() {
+        ReserveMessage r = ReserveMessage.of(1024L, 1L, 15L, 3, 2);
+        String json = MessageJson.toJson(r);
+
+        assertThat(json).contains("\"quantity\":3", "\"clearanceQuantity\":2");
+        assertThat(json).doesNotContain("regularQuantity");
+        assertThat(r.regularQuantity()).isEqualTo(1);
+        // 마감세일만 사는 주문도 된다 (기본 수량 0)
+        assertThat(ReserveMessage.of(1024L, 1L, 15L, 2, 2).regularQuantity()).isZero();
+    }
+
+    @Test
+    void 마감세일_칸이_없는_옛_RESERVED_lot은_기본_lot_단가_null로_읽힌다() {
+        String json = """
+                {"messageId":"m1","type":"RESERVED","createdAt":"2026-10-15T09:00:00+09:00",
+                 "orderId":1024,"storeId":1,"productId":15,"productName":"매운 컵라면 115g","quantity":1,"unitPrice":3500,
+                 "lots":[{"lotId":300,"quantity":1,"expiryDate":"2026-10-20"}]}
+                """;
+
+        ReservedLot lot = ((ReservedMessage) MessageJson.fromJson(json)).lots().get(0);
+
+        assertThat(lot.clearance()).isFalse();
+        assertThat(lot.unitPrice()).isNull();
+        assertThat(lot).isEqualTo(new ReservedLot(300L, 1, OffsetDateTime.parse("2026-10-20T23:59:59+09:00")));
+    }
+
+    @Test
+    void 마감세일_lot은_clearance와_단가를_싣는다() {
+        String json = MessageJson.toJson(ReservedMessage.of(1024L, 1L, 15L, "매운 컵라면 115g", 1, 3500L, List.of(
+                ReservedLot.clearance(299L, 1, OffsetDateTime.parse("2026-11-08T23:59:59+09:00"), 2450L))));
+
+        assertThat(json).contains("\"clearance\":true", "\"unitPrice\":2450", "\"unitPrice\":3500");
+    }
+
+    @Test
+    void 옛_RESERVE_FAILED는_마감세일_남은_수량_null_새_사유는_문자열로_간다() {
+        String old = """
+                {"messageId":"m1","type":"RESERVE_FAILED","createdAt":"2026-10-15T09:00:00+09:00",
+                 "orderId":1024,"storeId":1,"productId":15,"reason":"OUT_OF_STOCK","availableQuantity":0}
+                """;
+        ReserveFailedMessage f = (ReserveFailedMessage) MessageJson.fromJson(old);
+        assertThat(f.clearanceAvailableQuantity()).isNull();
+        assertThat(f.availableQuantity()).isZero();
+
+        String json = MessageJson.toJson(ReserveFailedMessage.of(1024L, 1L, 15L, ReserveFailReason.CLEARANCE_SOLD_OUT, 4, 0));
+        assertThat(json).contains("\"reason\":\"CLEARANCE_SOLD_OUT\"", "\"availableQuantity\":4", "\"clearanceAvailableQuantity\":0");
     }
 
     @Test
