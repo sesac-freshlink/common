@@ -16,7 +16,7 @@
 
 inventory-service, order-service, logistics-simulator가 SQS로 쪽지를 주고받는다. 쪽지 클래스를 각자 만들면 필드가 어긋나서 서로 못 읽는다. 그래서 여기 한 번만 만들고 세 서비스가 같은 버전을 가져다 쓴다. Outbox·멱등 코드도 같은 이유로 여기 둔다.
 
-## 2. 들어 있는 것 (v0.7.1)
+## 2. 들어 있는 것 (v0.8.0)
 
 ### 쪽지 DTO 9종 (`com.freshlink.common.message`)
 
@@ -35,6 +35,29 @@ v0.5.0에서 RELEASE 사유에 `CANCELED`(결제 전 고객 취소, A7)를, 새 
 v0.6.0에서 화면 알림 쪽지 `NOTIFICATION`(`NotificationMessage`)을 더했다. 종류(`kind`)는 `EXPIRY_IMMINENT`·`EXPIRED`(점주)와 `RESTOCKED`(재입고 알림을 신청한 고객) 세 가지다. 받는 곳은 notification-service 하나이고, 알림 문구와 받는 사람은 notification-service가 정한다. 형식과 보내는 때는 [.github 화면 알림 문서](https://github.com/sesac-freshlink/.github/blob/main/docs/기능이해/화면-알림.md)가 진실이다.
 
 v0.7.0에서 주문 알림 두 종류를 더했다: `NEW_ORDER`(결제 끝난 새 픽업 주문 → 점주), `PICKUP_READY`(점주가 픽업 준비 완료 → 주문한 고객, `userId` = 주문의 `customerId`). 칸 `orderId`·`orderNo`·`storeName`이 늘었다. 보내는 곳은 order-service다. 옛 notification-service는 새 종류를 모르므로 **notification-service가 v0.7.0으로 먼저 배포된 뒤** order가 보낸다.
+
+v0.8.0에서 마감세일 함께 사기(이태우·김경우 D안) 칸을 더했다. 모두 칸 추가라 옛 쪽지도 그대로 읽힌다.
+
+| 쪽지 | 더한 칸 | 뜻 | 옛 쪽지를 읽으면 |
+| --- | --- | --- | --- |
+| RESERVE | `clearanceQuantity` (int) | `quantity`(전체 수량) 가운데 마감세일 재고에서 잡을 수량. 기본 재고 수량은 `regularQuantity()` = 전체 − 마감세일 | 0 |
+| RESERVED의 `lots[]` (`ReservedLot`) | `clearance` (boolean), `unitPrice` (Long, 원) | 이 lot을 마감세일 재고에서 잡았는지와 그 lot의 단가. 마감세일 lot은 마감세일 단가를 꼭 넣는다. 기본 lot은 null이어도 되고 null이면 쪽지의 `unitPrice`(기본 단가)로 본다 | `false`, null |
+| RESERVE_FAILED | 사유 `CLEARANCE_SOLD_OUT`, `clearanceAvailableQuantity` (Integer) | 요청한 마감세일 수량만큼 마감세일 재고가 없을 때(보는 사이 다 팔림). 기본가로 바꾸지 않고 실패로 돌린다. 마감세일 재고의 남은 수량은 마감세일을 요청한 주문의 실패에만 넣는다 | 칸은 null |
+
+- 쪽지 `ReservedMessage.unitPrice`와 `quantity`의 뜻은 그대로다(기본 단가, 전체 수량). lot 수량 합 = `quantity`도 그대로다.
+- Jackson 3은 없는 int·boolean 칸을 실패로 보므로, 새 int·boolean 칸에는 `@JsonSetter(nulls = AS_EMPTY)`를 달아 0·false로 읽게 했다.
+- 배포 순서: **inventory가 v0.8.0으로 먼저 배포된 뒤** order가 `clearanceQuantity`를 보낸다. 옛 inventory는 `clearanceQuantity`를 모르고 전체를 기본 재고로 잡으므로, order는 마감세일 lot 수가 맞지 않으면 주문을 실패로 닫고 RELEASE한다. 옛 order는 마감세일을 요청하지 않으므로 `CLEARANCE_SOLD_OUT`을 받을 일이 없다.
+
+```java
+// order: 전체 3개 중 마감세일 2개
+outboxWriter.save(commandsQueue, ReserveMessage.of(orderId, storeId, productId, 3, 2));
+// inventory: 마감세일 lot과 기본 lot을 따로 싣는다
+ReservedMessage.of(orderId, storeId, productId, productName, 3, 3500L, List.of(
+        ReservedLot.clearance(299L, 2, expiry1, 2450L),
+        new ReservedLot(300L, 1, expiry2)));
+// inventory: 마감세일이 모자라면
+ReserveFailedMessage.of(orderId, storeId, productId, ReserveFailReason.CLEARANCE_SOLD_OUT, regularLeft, clearanceLeft);
+```
 
 ```java
 // inventory 유통기한 스케줄러: lot을 IMMINENT로 바꾸는 같은 트랜잭션에서
